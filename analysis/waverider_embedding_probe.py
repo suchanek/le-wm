@@ -256,7 +256,10 @@ def load_hdf5_pixels(h5_path: Path, n: int, img_size: int = 224,
     """
     import torch
     import h5py
-    from torchvision.transforms.functional import resize, to_tensor
+    try:
+        import hdf5plugin  # registers Blosc/Zstd/LZ4 filters; required for this dataset
+    except ImportError:
+        pass  # older HDF5 files may not need it
 
     h5_path = _ensure_decompressed(h5_path)
 
@@ -269,30 +272,34 @@ def load_hdf5_pixels(h5_path: Path, n: int, img_size: int = 224,
 
         pix = f[pix_key]
         total = pix.shape[0]
+        native_h, native_w = pix.shape[1], pix.shape[2]
         print(f"  HDF5 '{pix_key}': shape={pix.shape}  dtype={pix.dtype}")
 
+        # Fancy indexing fails on some chunked HDF5 layouts — read a
+        # contiguous slice from a random offset instead.
         rng = np.random.default_rng(seed)
-        idx = np.sort(rng.choice(total, size=min(n, total), replace=False))
-        raw = pix[idx]   # (n, ...) — could be (n, H, W, C) or (n, T, H, W, C)
+        n_read = min(n, total)
+        start = int(rng.integers(0, total - n_read))
+        raw = pix[start : start + n_read]   # (n, H, W, C) uint8
 
     # Flatten time dimension if present
     if raw.ndim == 5:
-        raw = raw[:, 0]          # take first frame of each clip: (n, H, W, C)
+        raw = raw[:, 0]   # (n, H, W, C)
 
-    # Convert uint8 HWC → float CHW, resize, normalise
-    frames: list[torch.Tensor] = []
-    for img in raw:
-        if img.dtype != np.uint8:
-            img = (img * 255).clip(0, 255).astype(np.uint8)
-        t = to_tensor(img)                          # (3, H, W) float in [0,1]
-        if t.shape[-1] != img_size or t.shape[-2] != img_size:
-            t = resize(t, [img_size, img_size], antialias=True)
-        mean = torch.tensor(_IMAGENET_MEAN).view(3, 1, 1)
-        std  = torch.tensor(_IMAGENET_STD).view(3, 1, 1)
-        t = (t - mean) / std
-        frames.append(t)
+    # uint8 HWC → float32 CHW, normalise with ImageNet stats
+    x = raw.astype(np.float32) / 255.0          # (n, H, W, 3) in [0,1]
+    x = (x - _IMAGENET_MEAN) / _IMAGENET_STD    # normalise
 
-    return torch.stack(frames)   # (n, 3, img_size, img_size)
+    if native_h != img_size or native_w != img_size:
+        # Bilinear resize via torch (no torchvision needed)
+        t = torch.from_numpy(x).permute(0, 3, 1, 2)   # (n, 3, H, W)
+        t = torch.nn.functional.interpolate(
+            t, size=(img_size, img_size), mode="bilinear", align_corners=False
+        )
+    else:
+        t = torch.from_numpy(x).permute(0, 3, 1, 2)   # (n, 3, H, W) — already right size
+
+    return t
 
 
 # ---------------------------------------------------------------------------

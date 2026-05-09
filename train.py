@@ -123,11 +123,13 @@ def run(cfg):
         pred_proj=predictor_proj,
     )
 
+    default_scheduler = {"type": "LinearWarmupCosineAnnealingLR"}
+    scheduler_cfg = dict(cfg.scheduler) if cfg.get("scheduler") else default_scheduler
     optimizers = {
         'model_opt': {
             "modules": 'model',
             "optimizer": dict(cfg.optimizer),
-            "scheduler": {"type": "LinearWarmupCosineAnnealingLR"},
+            "scheduler": scheduler_cfg,
             "interval": "epoch",
         },
     }

@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Hydra outputs
+outputs/
+multirun/
+.hydra/
+
+# Lightning
+lightning_logs/
+
+# Weights & Biases
+wandb/
+
+# Training artifacts (written by stable_pretraining callbacks)
+environment.json
+environment_v1.json
+requirements_frozen.txt
+requirements_frozen_v1.txt
+
+# Checkpoints / model weights (stored in ~/.stable-wm, not here)
+*.pt
+*.ckpt
+*.pth
+*_object.ckpt
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

@@ -1,0 +1,88 @@
+defaults:
+  - _self_
+  - data: pusht
+
+# WaveRider embed_dim=10 experiment — Apple Metal (MPS) variant
+# =============================================================
+# Identical to lewm_d10.yaml except for MPS-compatible trainer settings.
+# Changes from lewm_d10.yaml:
+#   accelerator: mps   (Lightning MPS backend)
+#   precision: 32      (MPS has no bf16)
+#   pin_memory: False  (pinned memory is CUDA-only)
+#
+# Run:
+#   python train.py --config-name lewm_d10_mps
+#
+# Expected training time: slower than A100/4090 — use for smoke-test / short runs.
+# For full retrain use lewm_d10.yaml on a CUDA box.
+
+output_model_name: lewm_d10_mps
+subdir: ${hydra:job.id}
+
+num_workers: 6
+train_split: 0.9
+seed: 3072
+img_size: 224
+patch_size: 14
+encoder_scale: tiny
+dump_object: True
+
+trainer:
+  max_epochs: 100
+  devices: auto
+  accelerator: mps
+  precision: 32
+  gradient_clip_val: 1.0
+
+loader:
+  batch_size: 128
+  num_workers: 0        # MPS: tensors can't be shared across worker processes
+  persistent_workers: False
+  pin_memory: False
+
+optimizer:
+  type: AdamW
+  lr: 5e-5
+  weight_decay: 1e-3
+
+# MPS: estimated_stepping_batches returns None on Metal, so we provide steps explicitly.
+# Computed for pusht_expert_train (2,336,736 frames, train_split=0.9, batch=128, 100 epochs):
+#   steps_per_epoch = floor(2336736 * 0.9 / 128) = 16,430
+#   max_steps = 100 * 16,430 = 1,643,000  |  warmup = 1% = 16,430
+scheduler:
+  type: LinearWarmupCosineAnnealingLR
+  warmup_steps: 16430
+  max_steps: 1643000
+  warmup_start_lr: 0.0
+  eta_min: 0.0
+
+wandb:
+  enabled: True
+  config:
+    entity: lewm
+    project: lewm
+    name: lewm_d10_mps
+    id: ${subdir}
+    resume: allow
+    log_model: False
+
+wm:
+  type: lewm
+  history_size: 3
+  num_preds: 1
+  embed_dim: 10     # ← WaveRider: was 192; Whitney bound for d*=2.4 is 5, 2× headroom
+
+predictor:
+  depth: 6
+  heads: 16
+  mlp_dim: 2048
+  dim_head: 64
+  dropout: 0.1
+  emb_dropout: 0.0
+
+loss:
+  sigreg:
+    weight: 0.09
+    kwargs:
+      knots: 17
+      num_proj: 1024

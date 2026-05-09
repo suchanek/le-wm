@@ -1,0 +1,84 @@
+defaults:
+  - _self_
+  - data: pusht
+
+# WaveRider embed_dim=10 experiment
+# ===================================
+# The WaveRider embedding probe (analysis/waverider_embedding_probe.py) measured
+# d*=2.4 (TwoNN=3.2) for real pusht expert observations in LeWM's 192-dim space.
+# Whitney's theorem guarantees a faithful embedding in R^(2*d*) ≈ R^5.
+# We use embed_dim=10 (2× Whitney bound) for headroom.
+#
+# Hypothesis: task performance is preserved at 5% of the original embedding
+# budget, while ManifoldSolver planning improves because CEM samples R^10
+# instead of R^192.
+#
+# Run:
+#   python train.py --config-name lewm_d10
+#
+# Compare against:
+#   python train.py --config-name lewm          (embed_dim=192, baseline)
+#
+# Reference: waverider_embedding_probe.py Phase 3 results (2026-05-09)
+#   d*=2.4, Whitney 2d*=5, 192-dim is 81× intrinsic dim, 97% overhead.
+
+output_model_name: lewm_d10
+subdir: ${hydra:job.id}
+
+num_workers: 6
+train_split: 0.9
+seed: 3072
+img_size: 224
+patch_size: 14
+encoder_scale: tiny
+dump_object: True
+
+trainer:
+  max_epochs: 100
+  devices: auto
+  accelerator: gpu
+  precision: bf16
+  gradient_clip_val: 1.0
+
+loader:
+  batch_size: 128
+  num_workers: ${num_workers}
+  persistent_workers: True
+  prefetch_factor: 3
+  pin_memory: True
+
+optimizer:
+  type: AdamW
+  lr: 5e-5
+  weight_decay: 1e-3
+
+wandb:
+  enabled: True
+  config:
+    entity: lewm
+    project: lewm
+    name: lewm_d10
+    id: ${subdir}
+    resume: allow
+    log_model: False
+
+wm:
+  type: lewm
+  history_size: 3
+  num_preds: 1
+  embed_dim: 10     # ← WaveRider: was 192; Whitney bound for d*=2.4 is 5, 2× headroom
+
+predictor:
+  depth: 6
+  heads: 16
+  mlp_dim: 2048
+  dim_head: 64
+  dropout: 0.1
+  emb_dropout: 0.0
+
+loss:
+  sigreg:
+    weight: 0.09
+    kwargs:
+      knots: 17
+      num_proj: 1024

@@ -7,6 +7,7 @@ import lightning as pl
 import stable_pretraining as spt
 import stable_worldmodel as swm
 import torch
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 from omegaconf import OmegaConf, open_dict
 
@@ -162,9 +163,17 @@ def run(cfg):
         dirpath=run_dir, filename=cfg.output_model_name, epoch_interval=1,
     )
 
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=run_dir,
+        filename="epoch={epoch:03d}",
+        every_n_epochs=5,
+        save_top_k=-1,
+        save_last=True,
+    )
+
     trainer = pl.Trainer(
         **cfg.trainer,
-        callbacks=[object_dump_callback],
+        callbacks=[object_dump_callback, checkpoint_callback],
         num_sanity_val_steps=1,
         logger=logger,
         enable_checkpointing=True,

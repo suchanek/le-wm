@@ -52,6 +52,17 @@ optimizer:
   lr: 5e-5
   weight_decay: 1e-3
 
+# Explicit scheduler steps — avoids estimated_stepping_batches returning None.
+# Computed for pusht_expert_train (2,336,736 frames, train_split=0.9, batch=128, 100 epochs):
+#   steps_per_epoch = floor(2336736 * 0.9 / 128) = 16,430
+#   max_steps = 100 * 16,430 = 1,643,000  |  warmup = 1% = 16,430
+scheduler:
+  type: LinearWarmupCosineAnnealingLR
+  warmup_steps: 16430
+  max_steps: 1643000
+  warmup_start_lr: 0.0
+  eta_min: 0.0
+
 wandb:
   enabled: True
   config:

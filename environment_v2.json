@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-05-09T13:15:26.681461",
+  "python": {
+    "version": "3.10.20 (main, Mar  3 2026, 00:49:35) [Clang 17.0.0 (clang-1700.6.3.2)]",
+    "version_info": {
+      "major": 3,
+      "minor": 10,
+      "micro": 20
+    },
+    "executable": "/Users/egs/repos/le-wm/.venv/bin/python",
+    "prefix": "/Users/egs/repos/le-wm/.venv"
+  },
+  "system": {
+    "platform": "macOS-26.4.1-arm64-arm-64bit",
+    "system": "Darwin",
+    "release": "25.4.0",
+    "machine": "arm64",
+    "processor": "arm",
+    "hostname": "turing"
+  },
+  "packages": {
+    "pip_freeze": "Error getting pip freeze: Command '['/Users/egs/repos/le-wm/.venv/bin/python', '-m', 'pip', 'freeze']' returned non-zero exit status 1.",
+    "key_packages": {},
+    "total_packages": 0
+  },
+  "cuda": null,
+  "git": {
+    "commit_hash": "718cb5e81455313ee7064ef67820488ab6ec30aa",
+    "branch": "waverider/embedding-probe",
+    "has_uncommitted_changes": true,
+    "uncommitted_changes": "A  .gitignore\nAM config/train/lewm_d10_mps.yaml\nM  train.py",
+    "remote_url": "https://github.com/suchanek/le-wm.git"
+  },
+  "slurm": null,
+  "environment_variables": {
+    "PATH": "/Users/egs/repos/le-wm/.venv/bin:/Users/egs/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand:/Users/egs/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli:/Users/egs/repos/llama.cpp/build-metal/bin:/Users/egs/repos/llama.cpp:/Users/egs/.nvm/versions/node/v20.19.2/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/opt/local/bin:/opt/local/sbin:/opt/homebrew/bin/python3.12:/Users/egs/clang+llvm-15.0.0-rc1-arm64-apple-darwin21.0/bin:/Users/egs/.local/bin:/opt/homebrew/opt/curl/bin:/opt/homebrew/opt/libtool/libexec/gnubin:/opt/homebrew/opt/qt5/bin:/usr/local/opt/graphviz/bin:/Library/TeX/Distributions/.DefaultTeX/Contents/Programs/texbin:/usr/local/opt/icu4c/sbin:/usr/local/opt/icu4c/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pkg/env/active/bin:/opt/pmk/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/Applications/Wireshark.app/Contents/MacOS:/usr/local/share/dotnet:~/.dotnet/tools:/usr/local/go/bin:/Users/egs/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand:/Users/egs/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli:/Users/egs/repos/llama.cpp/build-metal/bin:/Users/egs/repos/llama.cpp:/Users/egs/.nvm/versions/node/v20.19.2/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/Users/egs/miniforge3/condabin:/Users/egs/.cargo/bin:/Users/egs/go/bin:/Users/egs/.orbstack/bin:/Users/egs/.cache/lm-studio/bin:/Users/egs/.vscode/extensions/ms-python.debugpy-2026.6.0-darwin-arm64/bundled/scripts/noConfigScripts:/Users/egs/.orbstack/bin:/Users/egs/.cache/lm-studio/bin"
+  }
+}

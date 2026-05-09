@@ -1,0 +1,1 @@
+Error getting pip freeze: Command '['/Users/egs/repos/le-wm/.venv/bin/python', '-m', 'pip', 'freeze']' returned non-zero exit status 1.

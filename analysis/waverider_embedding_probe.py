@@ -224,26 +224,84 @@ def probe(X: np.ndarray, label: str, k_pca: int = 30, k_graph: int = 15,
 
 
 # ---------------------------------------------------------------------------
+# HDF5 dataset loader
+# ---------------------------------------------------------------------------
+
+# ImageNet normalisation constants (matches LeWM training pipeline)
+_IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+_IMAGENET_STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+
+def _ensure_decompressed(h5_path: Path) -> Path:
+    """If only the .zst exists, decompress it with the system zstd binary."""
+    zst_path = h5_path.with_suffix(h5_path.suffix + ".zst")
+    if h5_path.exists():
+        return h5_path
+    if not zst_path.exists():
+        raise FileNotFoundError(f"Neither {h5_path} nor {zst_path} found.")
+    print(f"  Decompressing {zst_path.name} → {h5_path.name} ...")
+    import subprocess
+    subprocess.run(["zstd", "-d", str(zst_path), "-o", str(h5_path)], check=True)
+    return h5_path
+
+
+def load_hdf5_pixels(h5_path: Path, n: int, img_size: int = 224,
+                     seed: int = 42) -> "torch.Tensor":
+    """Sample n frames from the pusht HDF5 dataset, normalised for LeWM.
+
+    :param h5_path: Path to pusht_expert_train.h5 (decompressed).
+    :param n:       Number of frames to sample.
+    :param img_size: Target spatial size (default 224).
+    :returns: Float32 tensor (n, 3, img_size, img_size), ImageNet-normalised.
+    """
+    import torch
+    import h5py
+    from torchvision.transforms.functional import resize, to_tensor
+
+    h5_path = _ensure_decompressed(h5_path)
+
+    with h5py.File(h5_path, "r") as f:
+        # Discover the pixels dataset — handle both 'pixels' and 'observations'
+        pix_key = next((k for k in ("pixels", "observations", "obs") if k in f), None)
+        if pix_key is None:
+            print(f"  Available keys: {list(f.keys())}")
+            raise KeyError("Cannot find pixel observations in HDF5 (expected 'pixels')")
+
+        pix = f[pix_key]
+        total = pix.shape[0]
+        print(f"  HDF5 '{pix_key}': shape={pix.shape}  dtype={pix.dtype}")
+
+        rng = np.random.default_rng(seed)
+        idx = np.sort(rng.choice(total, size=min(n, total), replace=False))
+        raw = pix[idx]   # (n, ...) — could be (n, H, W, C) or (n, T, H, W, C)
+
+    # Flatten time dimension if present
+    if raw.ndim == 5:
+        raw = raw[:, 0]          # take first frame of each clip: (n, H, W, C)
+
+    # Convert uint8 HWC → float CHW, resize, normalise
+    frames: list[torch.Tensor] = []
+    for img in raw:
+        if img.dtype != np.uint8:
+            img = (img * 255).clip(0, 255).astype(np.uint8)
+        t = to_tensor(img)                          # (3, H, W) float in [0,1]
+        if t.shape[-1] != img_size or t.shape[-2] != img_size:
+            t = resize(t, [img_size, img_size], antialias=True)
+        mean = torch.tensor(_IMAGENET_MEAN).view(3, 1, 1)
+        std  = torch.tensor(_IMAGENET_STD).view(3, 1, 1)
+        t = (t - mean) / std
+        frames.append(t)
+
+    return torch.stack(frames)   # (n, 3, img_size, img_size)
+
+
+# ---------------------------------------------------------------------------
 # LeWM checkpoint loader
 # ---------------------------------------------------------------------------
 
-def load_lewm_embeddings(weights_path: str, config_path: str,
-                         n: int = 500, batch: int = 32) -> np.ndarray:
-    """Extract 192-dim embeddings from a pretrained LeWM checkpoint.
-
-    Reconstructs the JEPA model from the local jepa.py / module.py files,
-    loads the weights.pt state dict, and forward-passes synthetic pixel
-    observations to obtain the projected 192-dim embedding vectors.
-
-    :param weights_path: Path to weights.pt (HF download or STABLEWM_HOME).
-    :param config_path:  Path to config.json from the same download.
-    :param n:            Number of embedding vectors to extract.
-    :param batch:        Forward-pass batch size.
-    :returns:            np.ndarray of shape (n, 192).
-    """
+def _build_lewm_model(config_path: str):
+    """Reconstruct JEPA from config.json; return (model, img_size)."""
     import torch
-
-    # Ensure we can import jepa / module from the repo root
     repo_root = str(Path(__file__).parent.parent)
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
@@ -253,30 +311,28 @@ def load_lewm_embeddings(weights_path: str, config_path: str,
     cfg = json.loads(Path(config_path).read_text())
 
     def _clean(d: dict) -> dict:
-        """Strip Hydra metadata keys (_target_, _recursive_, etc.)."""
         return {k: v for k, v in d.items() if not k.startswith("_")}
 
     enc_cfg = _clean(cfg["encoder"])
+    img_size = enc_cfg.get("image_size", 224)
 
-    # Build the ViT encoder — prefer stable_pretraining, fall back to transformers
     try:
         import stable_pretraining as spt
         encoder = spt.backbone.utils.vit_hf(
             enc_cfg["size"],
             patch_size=enc_cfg["patch_size"],
-            image_size=enc_cfg["image_size"],
+            image_size=img_size,
             pretrained=False,
             use_mask_token=False,
         )
     except ImportError:
         from transformers import ViTConfig, ViTModel
-        # ViT-tiny trained from scratch: 192 hidden, 12 layers, 3 heads
         vcfg = ViTConfig(
             hidden_size=192,
             num_hidden_layers=12,
             num_attention_heads=3,
             intermediate_size=768,
-            image_size=enc_cfg.get("image_size", 224),
+            image_size=img_size,
             patch_size=enc_cfg.get("patch_size", 14),
             num_channels=3,
         )
@@ -284,12 +340,8 @@ def load_lewm_embeddings(weights_path: str, config_path: str,
 
     def _mlp(key: str) -> MLP:
         c = _clean(cfg[key])
-        return MLP(
-            input_dim=c["input_dim"],
-            output_dim=c["output_dim"],
-            hidden_dim=c["hidden_dim"],
-            norm_fn=torch.nn.BatchNorm1d,
-        )
+        return MLP(input_dim=c["input_dim"], output_dim=c["output_dim"],
+                   hidden_dim=c["hidden_dim"], norm_fn=torch.nn.BatchNorm1d)
 
     model = JEPA(
         encoder=encoder,
@@ -298,18 +350,46 @@ def load_lewm_embeddings(weights_path: str, config_path: str,
         projector=_mlp("projector"),
         pred_proj=_mlp("pred_proj"),
     )
+    return model, img_size, cfg
 
+
+def load_lewm_embeddings(weights_path: str, config_path: str,
+                         n: int = 500, batch: int = 32,
+                         dataset_path: str | None = None) -> np.ndarray:
+    """Extract 192-dim embeddings from a pretrained LeWM checkpoint.
+
+    :param weights_path:  Path to weights.pt.
+    :param config_path:   Path to config.json.
+    :param n:             Number of embeddings to extract.
+    :param batch:         Forward-pass batch size.
+    :param dataset_path:  Path to pusht_expert_train.h5[.zst] for real frames.
+                          If None, falls back to random Gaussian pixels.
+    :returns: np.ndarray of shape (n, 192).
+    """
+    import torch
+
+    model, img_size, _ = _build_lewm_model(config_path)
     sd = torch.load(weights_path, map_location="cpu", weights_only=False)
     model.load_state_dict(sd, strict=True)
     model.eval()
 
-    img_size = enc_cfg.get("image_size", 224)
-    pixels = torch.randn(n, 3, img_size, img_size)
-    embeddings: list[np.ndarray] = []
+    if dataset_path is not None:
+        h5 = Path(dataset_path)
+        # Accept both the .h5 and the .h5.zst path
+        if str(h5).endswith(".zst"):
+            h5 = Path(str(h5)[:-4])
+        print(f"  Loading real pusht observations from {h5.name} ...")
+        pixels = load_hdf5_pixels(h5, n=n, img_size=img_size)
+        source = "real pusht frames"
+    else:
+        print(f"  No dataset supplied — using random Gaussian pixels.")
+        pixels = torch.randn(n, 3, img_size, img_size)
+        source = "random Gaussian pixels"
 
-    print(f"  Extracting {n} embeddings (batch={batch})...")
+    print(f"  Extracting {len(pixels)} embeddings (source: {source}, batch={batch})...")
+    embeddings: list[np.ndarray] = []
     with torch.no_grad():
-        for i in range(0, n, batch):
+        for i in range(0, len(pixels), batch):
             chunk = pixels[i : i + batch]
             info = {"pixels": chunk.unsqueeze(1)}   # (B, 1, C, H, W)
             info = model.encode(info)
@@ -341,6 +421,8 @@ def main() -> None:
                         help="Variance threshold for intrinsic dim (default 0.90)")
     parser.add_argument("--rank", type=int, default=8,
                         help="Synthetic manifold rank hypothesis (default 8)")
+    parser.add_argument("--dataset", default=None,
+                        help="Path to pusht_expert_train.h5[.zst] for real observations")
     args = parser.parse_args()
 
     print("=" * 64)
@@ -392,14 +474,42 @@ def main() -> None:
 
     if args.checkpoint and args.config:
         try:
-            X_lewm = load_lewm_embeddings(
-                args.checkpoint, args.config, n=args.n
+            # Random-pixel baseline (already shown above, kept for direct comparison)
+            X_rand = load_lewm_embeddings(
+                args.checkpoint, args.config, n=args.n,
             )
-            probe(X_lewm,
-                  "LeWM pretrained encoder embeddings (real checkpoint)",
+            probe(X_rand,
+                  "LeWM encoder  —  random Gaussian pixels (baseline)",
                   args.k_pca, args.k_graph, args.tau)
+
+            # Real observations (if dataset available)
+            if args.dataset:
+                X_real = load_lewm_embeddings(
+                    args.checkpoint, args.config, n=args.n,
+                    dataset_path=args.dataset,
+                )
+                probe(X_real,
+                      "LeWM encoder  —  real pusht expert observations",
+                      args.k_pca, args.k_graph, args.tau)
+            else:
+                h5_default = Path.home() / ".stable-wm" / "pusht_expert_train.h5"
+                zst_default = Path(str(h5_default) + ".zst")
+                if h5_default.exists() or zst_default.exists():
+                    X_real = load_lewm_embeddings(
+                        args.checkpoint, args.config, n=args.n,
+                        dataset_path=str(h5_default),
+                    )
+                    probe(X_real,
+                          "LeWM encoder  —  real pusht expert observations",
+                          args.k_pca, args.k_graph, args.tau)
+                else:
+                    print("\n  Real-observations probe skipped.")
+                    print("  Dataset still downloading, or pass --dataset <path>.")
+                    print("  Expected: ~/.stable-wm/pusht_expert_train.h5[.zst]")
         except Exception as exc:
-            print(f"\n  [error loading checkpoint]: {exc}")
+            import traceback
+            print(f"\n  [error]: {exc}")
+            traceback.print_exc()
     else:
         print("\n  Skipped — pass --checkpoint and --config to probe real embeddings.")
         print("\n  Download a pretrained checkpoint:")

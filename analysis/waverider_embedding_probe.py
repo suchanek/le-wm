@@ -251,7 +251,12 @@ def load_lewm_embeddings(weights_path: str, config_path: str,
     from module import ARPredictor, Embedder, MLP
 
     cfg = json.loads(Path(config_path).read_text())
-    enc_cfg = cfg["encoder"]
+
+    def _clean(d: dict) -> dict:
+        """Strip Hydra metadata keys (_target_, _recursive_, etc.)."""
+        return {k: v for k, v in d.items() if not k.startswith("_")}
+
+    enc_cfg = _clean(cfg["encoder"])
 
     # Build the ViT encoder — prefer stable_pretraining, fall back to transformers
     try:
@@ -275,20 +280,21 @@ def load_lewm_embeddings(weights_path: str, config_path: str,
             patch_size=enc_cfg.get("patch_size", 14),
             num_channels=3,
         )
-        encoder = ViTModel(vcfg)
+        encoder = ViTModel(vcfg, add_pooling_layer=False)
 
     def _mlp(key: str) -> MLP:
+        c = _clean(cfg[key])
         return MLP(
-            input_dim=cfg[key]["input_dim"],
-            output_dim=cfg[key]["output_dim"],
-            hidden_dim=cfg[key]["hidden_dim"],
+            input_dim=c["input_dim"],
+            output_dim=c["output_dim"],
+            hidden_dim=c["hidden_dim"],
             norm_fn=torch.nn.BatchNorm1d,
         )
 
     model = JEPA(
         encoder=encoder,
-        predictor=ARPredictor(**cfg["predictor"]),
-        action_encoder=Embedder(**cfg["action_encoder"]),
+        predictor=ARPredictor(**_clean(cfg["predictor"])),
+        action_encoder=Embedder(**_clean(cfg["action_encoder"])),
         projector=_mlp("projector"),
         pred_proj=_mlp("pred_proj"),
     )

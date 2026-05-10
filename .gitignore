@@ -23,10 +23,11 @@ lightning_logs/
 wandb/
 
 # Training artifacts (written by stable_pretraining callbacks)
-environment.json
-environment_v1.json
-requirements_frozen.txt
-requirements_frozen_v1.txt
+environment*.json
+requirements_frozen*.txt
+
+# Local dataset cache
+data/
 
 # Checkpoints / model weights (stored in ~/.stable-wm, not here)
 *.pt

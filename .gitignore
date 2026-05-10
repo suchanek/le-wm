@@ -23,10 +23,8 @@ lightning_logs/
 wandb/
 
 # Training artifacts (written by stable_pretraining callbacks)
-environment.json
-environment_v1.json
-requirements_frozen.txt
-requirements_frozen_v1.txt
+environment*.json
+requirements_frozen*.txt
 
 # Checkpoints / model weights (stored in ~/.stable-wm, not here)
 *.pt
@@ -37,6 +35,12 @@ requirements_frozen_v1.txt
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
+
+# Stray ~/ dir created by tools that didn't expand the tilde
+~/
+
+# Local dataset cache (HF downloads, .h5 files, etc.)
+data/
 
 # macOS
 .DS_Store
